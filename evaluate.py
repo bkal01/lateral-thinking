@@ -102,6 +102,9 @@ def evaluate(model_name: str, cfg: Dict[str, Any], dataset_spec: str) -> None:
             answer_text = tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
             pred = extract_gsm8k_answer(answer_text)
             gold = extract_gsm8k_answer(ex["answer"].strip())
+            print(f"Question: {question}\n")
+            print(f"Answer: {answer_text}\n")
+            print(f"Pred: {pred}, Gold: {gold}\n")
             if pred == gold:
                 correct += 1
         else:
