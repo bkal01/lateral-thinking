@@ -16,23 +16,8 @@ def load_config(path: str) -> Dict[str, Any]:
         return yaml.safe_load(f)
 
 
-def extract_gsm8k_answer(text: str) -> str:
-    """Return the numeric answer from a model response for GSM8K.
-
-    The heuristic is:
-    1. If there is a pattern like "#### <answer>", return the number after `####`.
-    2. Otherwise, return the last standalone number in the text.
-    """
-    match = re.search(r"####\s*(-?\d+\.?\d*)", text)
-    if match:
-        return match.group(1)
-
-    numbers = re.findall(r"-?\d+\.?\d*", text)
-    return numbers[-1] if numbers else ""
-
-
-def evaluate(model_name: str, cfg: Dict[str, Any], dataset_spec: str) -> None:
-    """Run evaluation and print accuracy."""
+def chat(model_name: str, cfg: Dict[str, Any], prompt: str) -> None:
+    """Generate a response to a prompt, showing thinking steps."""
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -40,90 +25,45 @@ def evaluate(model_name: str, cfg: Dict[str, Any], dataset_spec: str) -> None:
         device_map="auto",
     )
 
-    parts = dataset_spec.split(":")
-    ds_name = parts[0]
-    ds_cfg = parts[1] if len(parts) > 1 else None
-    ds_split = parts[2] if len(parts) > 2 else "test"
-
-    dataset = (
-        load_dataset(ds_name, ds_cfg, split=ds_split)
-        if ds_cfg
-        else load_dataset(ds_name, split=ds_split)
+    messages = [{"role": "user", "content": prompt}]
+    
+    formatted_prompt = tokenizer.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=True,
+        enable_thinking=True,
     )
-
-    correct = 0
-    total = len(dataset)
-
-    print(f"Evaluating {model_name} on {total} examples from {dataset_spec}")
-    print("-" * 60)
-
-    # try to find the </think> token id if it exists
-    try:
-        think_token_id = tokenizer.convert_tokens_to_ids("</think>")
-        if think_token_id == tokenizer.unk_token_id:
-            think_token_id = None
-    except Exception:
-        think_token_id = None
-
+    
+    inputs = tokenizer([formatted_prompt], return_tensors="pt").to(model.device)
+    
     gen_kwargs = {k: cfg[k] for k in [
         "max_new_tokens",
-        "temperature",
+        "temperature", 
         "top_p",
         "top_k",
         "min_p",
         "do_sample",
     ] if k in cfg}
-
-    for i, ex in tqdm(enumerate(dataset), total=total):
-        if ds_name == "gsm8k":
-            question = ex["question"].strip()
-            messages = [{"role": "user", "content": question}]
-
-            prompt = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=True,
-            )
-            inputs = tokenizer([prompt], return_tensors="pt").to(model.device)
-
-            outputs = model.generate(**inputs, **gen_kwargs)
-            gen_ids = outputs[0][len(inputs.input_ids[0]):].tolist()
-
-            if think_token_id is not None:
-                try:
-                    idx = len(gen_ids) - gen_ids[::-1].index(think_token_id)
-                except ValueError:
-                    idx = 0
-                answer_ids = gen_ids[idx:]
-            else:
-                answer_ids = gen_ids
-
-            answer_text = tokenizer.decode(answer_ids, skip_special_tokens=True).strip()
-            pred = extract_gsm8k_answer(answer_text)
-            gold = extract_gsm8k_answer(ex["answer"].strip())
-            print(f"Question: {question}\n")
-            print(f"Answer: {answer_text}\n")
-            print(f"Pred: {pred}, Gold: {gold}\n")
-            if pred == gold:
-                correct += 1
-        else:
-            raise NotImplementedError(f"Dataset '{ds_name}' not supported yet.")
-
-    print("-" * 60)
-    acc = correct / total if total else 0.0
-    print(f"Final Accuracy: {acc * 100:.2f}% ({correct}/{total})")
-
+    
+    outputs = model.generate(**inputs, **gen_kwargs)
+    gen_ids = outputs[0][len(inputs.input_ids[0]):].tolist()
+    
+    full_response = tokenizer.decode(gen_ids, skip_special_tokens=False).strip()
+    
+    print(f"Prompt: {prompt}\n")
+    print(f"Response: {full_response}")
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate a HF causal LM on a dataset.")
+    parser = argparse.ArgumentParser(description="Evaluate a HF causal LM on a dataset or chat with it.")
     parser.add_argument("--model", required=True, help="HuggingFace model id")
     parser.add_argument("--config", required=True, help="Path to YAML config file")
-    parser.add_argument("--dataset", required=True, help="Dataset spec, e.g. 'gsm8k:main:test'")
+    parser.add_argument("--prompt", required=True, help="Prompt to send to model")
+    
     args = parser.parse_args()
-
+    
     cfg = load_config(args.config)
-    evaluate(args.model, cfg, args.dataset)
+    
+    chat(args.model, cfg, args.prompt)
 
 
 if __name__ == "__main__":
