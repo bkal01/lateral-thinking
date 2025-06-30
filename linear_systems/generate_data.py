@@ -33,6 +33,13 @@ def main() -> None:
     num_samples, num_vars, num_equations = args.num_samples, args.num_vars, args.num_equations
 
     As = np.random.randint(args.low, args.high + 1, size=(num_samples, num_equations, num_vars))
+    
+    # Ensure no equation has all coefficients equal to 0
+    for s in range(num_samples):
+        for eq in range(num_equations):
+            while np.all(As[s, eq, :] == 0):
+                As[s, eq, :] = np.random.randint(args.low, args.high + 1, size=num_vars)
+    
     xs = np.random.randint(args.low, args.high + 1, size=(num_samples, num_vars))
     bs = np.einsum("sij,sj->si", As, xs)
 
