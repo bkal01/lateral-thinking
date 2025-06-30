@@ -17,6 +17,7 @@ from linear_systems.prompts import generate_prompts
 def parse_latex_answer(response: str) -> Optional[Tuple[float, float]]:
     """
     Parse LaTeX formatted answer from LLM response.
+    Supports integers, decimals, simple fractions (1/2), and LaTeX fractions (\frac{1}{2}).
     
     Args:
         response: LLM response text
@@ -24,33 +25,94 @@ def parse_latex_answer(response: str) -> Optional[Tuple[float, float]]:
     Returns:
         Tuple of (x, y) values if parsing successful, None otherwise
     """
-    # Pattern to match \boxed{\begin{pmatrix} x \\ y \end{pmatrix}}
-    # Allow for various whitespace and formatting variations
-    patterns = [
+    def parse_number(num_str: str) -> float:
+        """Parse a number that could be integer, decimal, or fraction."""
+        num_str = num_str.strip()
+        
+        # Handle LaTeX fractions: \frac{numerator}{denominator} or \dfrac{numerator}{denominator}
+        frac_match = re.match(r'\\d?frac\{(-?\d+(?:\.\d+)?)\}\{(-?\d+(?:\.\d+)?)\}', num_str)
+        if frac_match:
+            numerator, denominator = frac_match.groups()
+            return float(numerator) / float(denominator)
+        
+        # Handle simple fractions: numerator/denominator
+        if '/' in num_str:
+            parts = num_str.split('/')
+            if len(parts) == 2:
+                try:
+                    return float(parts[0]) / float(parts[1])
+                except (ValueError, ZeroDivisionError):
+                    pass
+        
+        # Handle regular numbers (integers and decimals)
+        return float(num_str)
+    
+    # Try LaTeX fraction patterns first (supports both \frac and \dfrac)
+    latex_frac_patterns = [
+        r'\\boxed\{\\begin\{pmatrix\}\s*(\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\\\\\s*(\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\\end\{pmatrix\}\}',
+        r'\\begin\{pmatrix\}\s*(\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\\\\\s*(\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\\end\{pmatrix\}',
+        r'\(\s*(\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*,\s*(\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\)',
+    ]
+    
+    for pattern in latex_frac_patterns:
+        matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
+        if matches:
+            try:
+                x_str, y_str = matches[0]
+                return (parse_number(x_str), parse_number(y_str))
+            except (ValueError, IndexError, ZeroDivisionError):
+                continue
+    
+    # Try simple fraction patterns
+    simple_frac_patterns = [
+        r'\\boxed\{\\begin\{pmatrix\}\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?)\s*\\\\\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?)\s*\\end\{pmatrix\}\}',
+        r'\\begin\{pmatrix\}\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?)\s*\\\\\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?)\s*\\end\{pmatrix\}',
+        r'\(\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?)\s*\)',
+    ]
+    
+    # Try mixed format patterns (fractions mixed with regular numbers, supports both \frac and \dfrac)
+    mixed_patterns = [
+        r'\\boxed\{\\begin\{pmatrix\}\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?|\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\\\\\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?|\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\\end\{pmatrix\}\}',
+        r'\\begin\{pmatrix\}\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?|\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\\\\\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?|\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\\end\{pmatrix\}',
+        r'\(\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?|\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*,\s*(-?\d+(?:\.\d+)?/-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?|\\d?frac\{-?\d+(?:\.\d+)?\}\{-?\d+(?:\.\d+)?\})\s*\)',
+    ]
+    
+    for pattern in simple_frac_patterns:
+        matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
+        if matches:
+            try:
+                x_str, y_str = matches[0]
+                return (parse_number(x_str), parse_number(y_str))
+            except (ValueError, IndexError, ZeroDivisionError):
+                continue
+    
+    # Try mixed format patterns
+    for pattern in mixed_patterns:
+        matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
+        if matches:
+            try:
+                x_str, y_str = matches[0]
+                return (parse_number(x_str), parse_number(y_str))
+            except (ValueError, IndexError, ZeroDivisionError):
+                continue
+    
+    # Original patterns for regular numbers
+    regular_patterns = [
         r'\\boxed\{\\begin\{pmatrix\}\s*(-?\d+(?:\.\d+)?)\s*\\\\\s*(-?\d+(?:\.\d+)?)\s*\\end\{pmatrix\}\}',
         r'\\boxed\{\\begin\{pmatrix\}\s*(-?\d+(?:\.\d+)?)\s*\\\s*(-?\d+(?:\.\d+)?)\s*\\end\{pmatrix\}\}',
         r'boxed\{\\begin\{pmatrix\}\s*(-?\d+(?:\.\d+)?)\s*\\\\\s*(-?\d+(?:\.\d+)?)\s*\\end\{pmatrix\}\}',
         r'\\begin\{pmatrix\}\s*(-?\d+(?:\.\d+)?)\s*\\\\\s*(-?\d+(?:\.\d+)?)\s*\\end\{pmatrix\}',
+        r'\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)',
     ]
     
-    for pattern in patterns:
+    for pattern in regular_patterns:
         matches = re.findall(pattern, response, re.IGNORECASE | re.DOTALL)
         if matches:
             try:
-                x_val, y_val = matches[0]
-                return (float(x_val), float(y_val))
-            except (ValueError, IndexError):
+                x_str, y_str = matches[0]
+                return (parse_number(x_str), parse_number(y_str))
+            except (ValueError, IndexError, ZeroDivisionError):
                 continue
-    
-    # Fallback: look for simple coordinate pairs in parentheses
-    fallback_pattern = r'\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)'
-    matches = re.findall(fallback_pattern, response)
-    if matches:
-        try:
-            x_val, y_val = matches[-1]  # Take the last match
-            return (float(x_val), float(y_val))
-        except (ValueError, IndexError):
-            pass
     
     return None
 
