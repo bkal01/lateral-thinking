@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Model loading and response generation for linear systems evaluation.
+Model loading and response generation for evaluation tasks.
 """
 
 import logging

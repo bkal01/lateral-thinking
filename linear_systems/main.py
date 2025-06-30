@@ -15,8 +15,8 @@ import logging
 import sys
 import torch
 
-from dataset import load_dataset
-from evaluation import evaluate_system, print_summary_statistics, save_results_to_csv
+from linear_systems.dataset import load_dataset
+from linear_systems.evaluation import evaluate_system, print_summary_statistics, save_results_to_csv
 from models import load_model_and_tokenizer
 from utils import setup_logging
 
@@ -77,7 +77,7 @@ Examples:
 
 def main():
     """Main evaluation script entry point."""
-    setup_logging()
+    setup_logging('linear_systems_evaluation.log')
     logger = logging.getLogger(__name__)
     
     try:

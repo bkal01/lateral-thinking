@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 from models import generate_response
-from prompts import generate_prompts
+from linear_systems.prompts import generate_prompts
 
 
 def parse_latex_answer(response: str) -> Optional[Tuple[float, float]]:
